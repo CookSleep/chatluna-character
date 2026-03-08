@@ -198,12 +198,16 @@ function parseMessageContent(response: string) {
     }
 
     const tempJson = parseXmlToObject(rawMessage)
+    const markdownMatch = tempJson.content.match(
+        /^\s*<markdown>([\s\S]*?)<\/markdown>\s*$/
+    )
     return {
         // 保留原始 `<message ...>...</message>`，便于后续解析元素属性（如 `quote="..."`）。
-        rawMessage,
-        messageType: tempJson.type,
+        rawMessage: markdownMatch?.[1] ?? rawMessage,
+        messageType: markdownMatch ? 'markdown' : tempJson.type,
         status,
-        sticker: tempJson.sticker
+        sticker: tempJson.sticker,
+        quote: tempJson.quote
     }
 }
 
@@ -366,14 +370,17 @@ export async function processElements(
     voiceRender?: (element: h) => Promise<h[]>,
     config?: Config
 ) {
-    const result: Element[][] = []
-    const last = () => result.at(-1)
+    const result: ({ type: 'text'; elements: Element[] } | { type: 'markdown'; elements: Element[]; rawMessage: string })[] = []
+    const last = () => {
+        const frag = result.at(-1)
+        return frag?.type === 'text' ? frag.elements : undefined
+    }
     const canAppendAt = () => last()?.at(-2)?.type === 'at'
 
     type PendingQuote = { id?: string; used: boolean }
 
     const ensureLast = () => {
-        if (!last()) result.push([])
+        if (!last()) result.push({ type: 'text', elements: [] })
     }
 
     const appendToLast = (items: Element[], pendingQuote?: PendingQuote) => {
@@ -392,21 +399,23 @@ export async function processElements(
 
     const pushFragment = (items: Element[], pendingQuote?: PendingQuote) => {
         if (items.length === 0) {
-            result.push([])
             return
         }
 
         if (pendingQuote?.id && !pendingQuote.used) {
-            result.push([h('quote', { id: pendingQuote.id }), ...items])
+            result.push({
+                type: 'text',
+                elements: [h('quote', { id: pendingQuote.id }), ...items]
+            })
             pendingQuote.used = true
             return
         }
 
-        result.push(items)
+        result.push({ type: 'text', elements: items })
     }
 
     const startNewFragmentIfNeeded = () => {
-        if (last()?.length) result.push([])
+        if (last()?.length) result.push({ type: 'text', elements: [] })
     }
 
     const appendOrPush = (items: Element[], pendingQuote?: PendingQuote) => {
@@ -456,6 +465,19 @@ export async function processElements(
         const blockQuote: PendingQuote | undefined = el.attrs.quote
             ? { id: String(el.attrs.quote), used: false }
             : undefined
+
+        if (el.attrs.markdown) {
+            const text = el.children[0]?.attrs['content']
+            if (text) {
+                result.push({
+                    type: 'markdown',
+                    elements: [h.text(text)],
+                    rawMessage: text
+                })
+            }
+            startNewFragmentIfNeeded()
+            return
+        }
 
         await process(el.children, blockQuote)
         startNewFragmentIfNeeded()
@@ -510,14 +532,14 @@ export async function processElements(
 
     // 与 ChatLuna 发送侧行为对齐：片段中若存在不兼容类型则移除 quote。
     for (const fragment of result) {
-        if (fragment[0]?.type !== 'quote') continue
-        const hasIncompatibleType = fragment.some(
+        if (fragment.type !== 'text' || fragment.elements[0]?.type !== 'quote') continue
+        const hasIncompatibleType = fragment.elements.some(
             (element) => element.type === 'audio' || element.type === 'message'
         )
-        if (hasIncompatibleType) fragment.shift()
+        if (hasIncompatibleType) fragment.elements.shift()
     }
 
-    return result.filter((fragment) => fragment.length > 0)
+    return result.filter((fragment) => fragment.elements.length > 0)
 }
 
 interface TextMatch {
@@ -580,11 +602,16 @@ export function processTextMatches(
                 break
             case 'pre':
             case 'message': {
-                parsedMessage += token.content
-                const children = token.children
-                    ? processTextMatches(token.content, useAt, markdownRender)
-                          .currentElements
-                    : [h('text', { span: true, content: token.content })]
+                const markdown = token.content.match(
+                    /^\s*<markdown>([\s\S]*?)<\/markdown>\s*$/
+                )
+                parsedMessage += markdown?.[1] ?? token.content
+                const children = markdown
+                    ? [h.text(markdown[1])]
+                    : token.children
+                      ? processTextMatches(token.content, useAt, markdownRender)
+                            .currentElements
+                      : [h('text', { span: true, content: token.content })]
 
                 const isTopLevelMessage = token.extra?.topLevel === 'true'
                 const quoteId = isTopLevelMessage
@@ -597,6 +624,7 @@ export function processTextMatches(
                         {
                             span: true,
                             ...(isTopLevelMessage ? { block: true } : {}),
+                            ...(markdown ? { markdown: true } : {}),
                             ...(quoteId ? { quote: quoteId } : {})
                         },
                         ...children
@@ -893,7 +921,7 @@ export async function parseResponse(
     config?: Config
 ) {
     try {
-        const { rawMessage, messageType, status, sticker } =
+        const { rawMessage, messageType, status, sticker, quote } =
             parseMessageContent(response)
 
         const { currentElements, parsedMessage } = processTextMatches(
@@ -909,11 +937,13 @@ export async function parseResponse(
         )
 
         return {
-            elements: resultElements,
+            fragments: resultElements,
+            elements: resultElements.map((fragment) => fragment.elements),
             rawMessage: parsedMessage,
             status,
             sticker,
-            messageType
+            messageType,
+            quote
         }
     } catch (e) {
         logger?.error(e)
@@ -1433,6 +1463,7 @@ export function parseXmlToObject(xml: string) {
         id: getAttr('id'),
         type: getAttr('type') || 'text',
         sticker: getAttr('sticker'),
+        quote: getAttr('quote'),
         content
     }
 }

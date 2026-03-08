@@ -40,6 +40,11 @@ export function apply(ctx: Context, config: Config) {
         const id = session.isDirect ? session.userId : session.guildId
 
         if (session.isDirect && !config.applyPrivate.includes(id)) {
+            if (session.platform === 'qq') {
+                ctx.logger('chatluna-character').debug(
+                    `skip private session: platform=${session.platform} userId=${session.userId} channelId=${session.channelId}`
+                )
+            }
             return next()
         }
 

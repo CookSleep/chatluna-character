@@ -81,12 +81,14 @@ async function parseResponseContent(
         return {
             responseMessage,
             responseContent,
-            parsedResponse: {
-                elements: [],
-                rawMessage: responseContent,
-                status: undefined,
-                sticker: undefined,
-                messageType: 'text'
+                parsedResponse: {
+                    fragments: [],
+                    elements: [],
+                    rawMessage: responseContent,
+                    status: undefined,
+                    sticker: undefined,
+                messageType: 'text',
+                quote: undefined
             }
         }
     }
@@ -139,11 +141,13 @@ async function parseResponseContent(
         )
 
         parsedResponse = {
+            fragments: [],
             elements: [],
             rawMessage: responseContent,
             status: undefined,
             sticker: undefined,
-            messageType: 'text'
+            messageType: 'text',
+            quote: undefined
         }
     }
 
@@ -625,7 +629,14 @@ async function handleMessageSending(
     try {
         switch (parsedResponse.messageType) {
             case 'text':
-                await session.send(elements)
+                if (session.platform === 'qq' && session.isDirect) {
+                    await (ctx.chatluna.chatChain as any).sendMessage(
+                        session,
+                        elements
+                    )
+                } else {
+                    await session.send(elements)
+                }
                 sent = true
                 break
             case 'voice':
@@ -637,14 +648,28 @@ async function handleMessageSending(
                 sent = true
                 break
             default:
-                await session.send(elements)
+                if (session.platform === 'qq' && session.isDirect) {
+                    await (ctx.chatluna.chatChain as any).sendMessage(
+                        session,
+                        elements
+                    )
+                } else {
+                    await session.send(elements)
+                }
                 sent = true
                 break
         }
     } catch (e) {
         logger.error(e)
         try {
-            await session.send(elements)
+            if (session.platform === 'qq' && session.isDirect) {
+                await (ctx.chatluna.chatChain as any).sendMessage(
+                    session,
+                    elements
+                )
+            } else {
+                await session.send(elements)
+            }
             sent = true
         } catch (fallbackError) {
             logger.error(fallbackError)
@@ -660,10 +685,96 @@ async function handleParsedResponseChunk(
     ctx: Context,
     parsedResponse: ParsedResponse
 ): Promise<{ breakSay: boolean; sentAny: boolean }> {
+    if (parsedResponse.messageType === 'markdown') {
+        const rendered = await ctx.chatluna.renderer
+            .render(
+                {
+                    content: parsedResponse.rawMessage
+                },
+                {
+                    type: 'text',
+                    session
+                }
+            )
+            .then((messages) =>
+                messages.map((msg) =>
+                    Array.isArray(msg.element) ? msg.element : [msg.element]
+                )
+            )
+
+        if (
+            session.platform === 'qq' &&
+            session.isDirect &&
+            rendered[0]?.[1]?.type === 'markdown-qq'
+        ) {
+            await (session.bot as any).internal.sendPrivateMessage(
+                session.event.user.id,
+                {
+                    msg_type: 2,
+                    msg_seq: 1,
+                    msg_id: session.messageId,
+                    markdown: {
+                        content: rendered[0][0].attrs['content']
+                    }
+                }
+            )
+        } else {
+            await (ctx.chatluna.chatChain as any).sendMessage(session, rendered)
+        }
+
+        return { breakSay: false, sentAny: true }
+    }
+
     let breakSay = false
     let sentAny = false
 
-    for (const elements of parsedResponse.elements) {
+    for (const fragment of parsedResponse.fragments) {
+        if (fragment.type === 'markdown') {
+            const rendered = await ctx.chatluna.renderer
+                .render(
+                    {
+                        content: fragment.rawMessage
+                    },
+                    {
+                        type: 'text',
+                        session
+                    }
+                )
+                .then((messages) =>
+                    messages.map((msg) =>
+                        Array.isArray(msg.element) ? msg.element : [msg.element]
+                    )
+                )
+
+            if (
+                session.platform === 'qq' &&
+                session.isDirect &&
+                rendered[0]?.[1]?.type === 'markdown-qq'
+            ) {
+                await (session.bot as any).internal.sendPrivateMessage(
+                    session.event.user.id,
+                    {
+                        msg_type: 2,
+                        msg_seq: 1,
+                        msg_id: session.messageId,
+                        markdown: {
+                            content: rendered[0][0].attrs['content']
+                        }
+                    }
+                )
+            } else {
+                await (ctx.chatluna.chatChain as any).sendMessage(
+                    session,
+                    rendered
+                )
+            }
+
+            sentAny = true
+            continue
+        }
+
+        const elements = fragment.elements
+
         const text = elements
             .map((element) => element.attrs.content ?? '')
             .join('')

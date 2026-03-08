@@ -855,6 +855,13 @@ export class MessageCollector extends Service {
             return this._pullOneBot(session, count, focusMessage, clearedAfter)
         }
 
+        if (session.platform === 'qq') {
+            this.logger.debug(
+                `Skip history pull for session ${session.isDirect ? session.userId : session.guildId}: current adapter is QQ official.`
+            )
+            return []
+        }
+
         if (typeof bot.getMessageList === 'function') {
             return this._pullBot(session, count, focusMessage, clearedAfter)
         }
