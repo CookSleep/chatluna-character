@@ -57,6 +57,14 @@ function createStoredSession(bot: Bot, temp: WakeUpReplyRecord) {
     }) as Session
 }
 
+type QQSession = Session & {
+    qq?: {
+        d?: {
+            attachments?: unknown[]
+        }
+    }
+}
+
 export class MessageCollector extends Service {
     private _messages: Record<string, Message[]> = {}
 
@@ -576,7 +584,11 @@ export class MessageCollector extends Service {
                 element.type === 'audio'
         )
 
-        const preMessage = config.image || hasMultimodalFile
+        const hasAttachment =
+            session.platform === 'qq' &&
+            (((session as QQSession).qq?.d?.attachments?.length ?? 0) > 0)
+
+        const preMessage = config.image || hasMultimodalFile || hasAttachment
             ? await this.ctx.chatluna.messageTransformer.transform(
                   session,
                   elements,
