@@ -97,8 +97,7 @@ export async function apply(ctx: Context, config: Config) {
             const temp = await service.getTemp(session, latestMessages)
             const focusMessage = latestMessages[latestMessages.length - 1]
 
-            const { completionMessages, persistedHumanMessage } =
-                await prepareMessages(
+            const completionMessages = await prepareMessages(
                 latestMessages,
                 copyOfConfig,
                 session,
@@ -181,7 +180,9 @@ export async function apply(ctx: Context, config: Config) {
                 )
             }
 
-            temp.completionMessages.push(persistedHumanMessage)
+            temp.completionMessages.push(
+                completionMessages[completionMessages.length - 1]
+            )
             if (lastResponseMessage) {
                 temp.completionMessages.push(lastResponseMessage)
             }
@@ -511,10 +512,7 @@ async function prepareMessages(
     chain?: ChatLunaChain,
     focusMessage?: Message,
     triggerReason?: string
-): Promise<{
-    completionMessages: BaseMessage[]
-    persistedHumanMessage: BaseMessage
-}> {
+): Promise<BaseMessage[]> {
     const [recentMessage, lastMessage] = await formatMessage(
         messages,
         config,
@@ -605,28 +603,6 @@ async function prepareMessages(
             }
         )
     )
-    const persistedHumanMessage = new HumanMessage(
-        await currentPreset.input.format(
-            {
-                history_new: recentMessage
-                    .join('\n\n')
-                    .replaceAll('{', '{{')
-                    .replaceAll('}', '}}'),
-                history_last: historyLast,
-                time: formatTimestamp(new Date()),
-                stickers: '',
-                status: temp.status ?? currentPreset.status ?? '',
-                trigger_reason: triggerReasonText,
-                prompt: session.content,
-                built
-            },
-            session.app.chatluna.promptRenderer,
-            {
-                session
-            }
-        )
-    )
-
     const tempMessages: BaseMessage[] = []
 
     if (config.image) {
@@ -654,18 +630,15 @@ async function prepareMessages(
         }
     }
 
-    return {
-        completionMessages: await formatCompletionMessages(
-            [new SystemMessage(formattedSystemPrompt)].concat(
-                temp.completionMessages
-            ),
-            tempMessages,
-            humanMessage,
-            config,
-            model
+    return await formatCompletionMessages(
+        [new SystemMessage(formattedSystemPrompt)].concat(
+            temp.completionMessages
         ),
-        persistedHumanMessage
-    }
+        tempMessages,
+        humanMessage,
+        config,
+        model
+    )
 }
 
 // eslint-disable-next-line prettier/prettier
