@@ -97,7 +97,8 @@ export async function apply(ctx: Context, config: Config) {
             const temp = await service.getTemp(session, latestMessages)
             const focusMessage = latestMessages[latestMessages.length - 1]
 
-            const completionMessages = await prepareMessages(
+            const { completionMessages, persistedHumanMessage } =
+                await prepareMessages(
                 latestMessages,
                 copyOfConfig,
                 session,
@@ -180,9 +181,7 @@ export async function apply(ctx: Context, config: Config) {
                 )
             }
 
-            temp.completionMessages.push(
-                completionMessages[completionMessages.length - 1]
-            )
+            temp.completionMessages.push(persistedHumanMessage)
             if (lastResponseMessage) {
                 temp.completionMessages.push(lastResponseMessage)
             }
@@ -512,7 +511,10 @@ async function prepareMessages(
     chain?: ChatLunaChain,
     focusMessage?: Message,
     triggerReason?: string
-): Promise<BaseMessage[]> {
+): Promise<{
+    completionMessages: BaseMessage[]
+    persistedHumanMessage: BaseMessage
+}> {
     const [recentMessage, lastMessage] = await formatMessage(
         messages,
         config,
@@ -572,6 +574,16 @@ async function prepareMessages(
 
     temp.lastHistoryNew = recentMessage.slice()
 
+    const historyLast = lastMessage
+        .replaceAll('{', '{{')
+        .replaceAll('}', '}}')
+    const triggerReasonText = (triggerReason ?? 'Normal message trigger')
+        .replaceAll('{', '{{')
+        .replaceAll('}', '}}')
+    const built = {
+        preset: currentPreset.name,
+        conversationId: session.isDirect ? session.userId : session.guildId
+    }
     const humanMessage = new HumanMessage(
         await currentPreset.input.format(
             {
@@ -579,22 +591,34 @@ async function prepareMessages(
                     .join('\n\n')
                     .replaceAll('{', '{{')
                     .replaceAll('}', '}}'),
-                history_last: lastMessage
-                    .replaceAll('{', '{{')
-                    .replaceAll('}', '}}'),
+                history_last: historyLast,
                 time: formatTimestamp(new Date()),
-                stickers: '', // JSON.stringify(stickerService.getAllStickTypes()),
+                stickers: '',
                 status: temp.status ?? currentPreset.status ?? '',
-                trigger_reason: (triggerReason ?? 'Normal message trigger')
+                trigger_reason: triggerReasonText,
+                prompt: session.content,
+                built
+            },
+            session.app.chatluna.promptRenderer,
+            {
+                session
+            }
+        )
+    )
+    const persistedHumanMessage = new HumanMessage(
+        await currentPreset.input.format(
+            {
+                history_new: recentMessage
+                    .join('\n\n')
                     .replaceAll('{', '{{')
                     .replaceAll('}', '}}'),
+                history_last: historyLast,
+                time: formatTimestamp(new Date()),
+                stickers: '',
+                status: temp.status ?? currentPreset.status ?? '',
+                trigger_reason: triggerReasonText,
                 prompt: session.content,
-                built: {
-                    preset: currentPreset.name,
-                    conversationId: session.isDirect
-                        ? session.userId
-                        : session.guildId
-                }
+                built
             },
             session.app.chatluna.promptRenderer,
             {
@@ -630,15 +654,18 @@ async function prepareMessages(
         }
     }
 
-    return formatCompletionMessages(
-        [new SystemMessage(formattedSystemPrompt)].concat(
-            temp.completionMessages
+    return {
+        completionMessages: await formatCompletionMessages(
+            [new SystemMessage(formattedSystemPrompt)].concat(
+                temp.completionMessages
+            ),
+            tempMessages,
+            humanMessage,
+            config,
+            model
         ),
-        tempMessages,
-        humanMessage,
-        config,
-        model
-    )
+        persistedHumanMessage
+    }
 }
 
 // eslint-disable-next-line prettier/prettier
