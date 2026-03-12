@@ -23,6 +23,7 @@ export interface Message {
 
 export interface GroupTemp {
     completionMessages: BaseMessage[]
+    lastHistoryNew?: string[]
     status?: string | null
     recordLoaded?: boolean
     historyPulled?: boolean
@@ -152,7 +153,7 @@ export interface PendingNextReplyConditionGroup {
 export interface PendingNextReply {
     rawReason: string
     groups: PendingNextReplyConditionGroup[]
-    createdAt: number
+    sentAt: number
 }
 
 export interface PendingWakeUpReply {
