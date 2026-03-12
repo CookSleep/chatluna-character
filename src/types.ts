@@ -23,7 +23,6 @@ export interface Message {
 
 export interface GroupTemp {
     completionMessages: BaseMessage[]
-    lastHistoryNew?: string[]
     status?: string | null
     recordLoaded?: boolean
     historyPulled?: boolean

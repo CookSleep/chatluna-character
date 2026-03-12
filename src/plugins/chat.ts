@@ -97,7 +97,8 @@ export async function apply(ctx: Context, config: Config) {
             const temp = await service.getTemp(session, latestMessages)
             const focusMessage = latestMessages[latestMessages.length - 1]
 
-            const completionMessages = await prepareMessages(
+            const { completionMessages, persistedHumanMessage } =
+                await prepareMessages(
                 latestMessages,
                 copyOfConfig,
                 session,
@@ -180,9 +181,7 @@ export async function apply(ctx: Context, config: Config) {
                 )
             }
 
-            temp.completionMessages.push(
-                completionMessages[completionMessages.length - 1]
-            )
+            temp.completionMessages.push(persistedHumanMessage)
             if (lastResponseMessage) {
                 temp.completionMessages.push(lastResponseMessage)
             }
@@ -512,7 +511,10 @@ async function prepareMessages(
     chain?: ChatLunaChain,
     focusMessage?: Message,
     triggerReason?: string
-): Promise<BaseMessage[]> {
+): Promise<{
+    completionMessages: BaseMessage[]
+    persistedHumanMessage: BaseMessage
+}> {
     const [recentMessage, lastMessage] = await formatMessage(
         messages,
         config,
@@ -543,35 +545,6 @@ async function prepareMessages(
         logger.debug('formatted_last_message: ' + lastMessage)
     }
 
-    let historyNewMessages = recentMessage
-    if (
-        config.modelCompletionCount > 0 &&
-        temp.lastHistoryNew &&
-        temp.lastHistoryNew.length > 0
-    ) {
-        let overlap = Math.min(
-            temp.lastHistoryNew.length,
-            recentMessage.length
-        )
-
-        while (overlap > 0) {
-            const previous = temp.lastHistoryNew.slice(-overlap)
-            const current = recentMessage.slice(0, overlap)
-
-            if (previous.every((msg, index) => msg === current[index])) {
-                break
-            }
-
-            overlap--
-        }
-
-        if (overlap > 0) {
-            historyNewMessages = ['...'].concat(recentMessage.slice(overlap))
-        }
-    }
-
-    temp.lastHistoryNew = recentMessage.slice()
-
     const historyLast = lastMessage
         .replaceAll('{', '{{')
         .replaceAll('}', '}}')
@@ -585,7 +558,28 @@ async function prepareMessages(
     const humanMessage = new HumanMessage(
         await currentPreset.input.format(
             {
-                history_new: historyNewMessages
+                history_new: recentMessage
+                    .join('\n\n')
+                    .replaceAll('{', '{{')
+                    .replaceAll('}', '}}'),
+                history_last: historyLast,
+                time: formatTimestamp(new Date()),
+                stickers: '',
+                status: temp.status ?? currentPreset.status ?? '',
+                trigger_reason: triggerReasonText,
+                prompt: session.content,
+                built
+            },
+            session.app.chatluna.promptRenderer,
+            {
+                session
+            }
+        )
+    )
+    const persistedHumanMessage = new HumanMessage(
+        await currentPreset.input.format(
+            {
+                history_new: recentMessage
                     .join('\n\n')
                     .replaceAll('{', '{{')
                     .replaceAll('}', '}}'),
@@ -630,7 +624,7 @@ async function prepareMessages(
         }
     }
 
-    return await formatCompletionMessages(
+    const completionMessages = await formatCompletionMessages(
         [new SystemMessage(formattedSystemPrompt)].concat(
             temp.completionMessages
         ),
@@ -639,6 +633,62 @@ async function prepareMessages(
         config,
         model
     )
+
+    if (config.modelCompletionCount > 0) {
+        let previous: string[] | undefined
+        for (const message of completionMessages) {
+            if (message.getType() !== 'human') {
+                continue
+            }
+
+            const content = message.content as string
+            const start = content.indexOf('# 最近消息')
+            const end = content.indexOf('\n# 最后消息')
+            if (start < 0 || end < 0 || end <= start) {
+                continue
+            }
+
+            const block = content
+                .slice(start + '# 最近消息'.length, end)
+                .trim()
+
+            const current = block.length > 0
+                ? block.split('\n\n').filter((it) => it.length > 0 && it !== '...')
+                : []
+
+            if (!previous) {
+                previous = current
+                continue
+            }
+
+            let overlap = Math.min(previous.length, current.length)
+            while (overlap > 0) {
+                const prevTail = previous.slice(-overlap)
+                const currHead = current.slice(0, overlap)
+                if (prevTail.every((it, index) => it === currHead[index])) {
+                    break
+                }
+                overlap--
+            }
+
+            if (overlap > 0) {
+                const changed = ['...'].concat(current.slice(overlap)).join('\n\n')
+                message.content =
+                    content.slice(0, start + '# 最近消息'.length) +
+                    '\n' +
+                    changed +
+                    '\n' +
+                    content.slice(end)
+            }
+
+            previous = current
+        }
+    }
+
+    return {
+        completionMessages,
+        persistedHumanMessage
+    }
 }
 
 // eslint-disable-next-line prettier/prettier
