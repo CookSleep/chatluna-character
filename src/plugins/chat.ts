@@ -152,7 +152,7 @@ export async function apply(ctx: Context, config: Config) {
                 lastResponseMessage = chunk.responseMessage
                 await ctx.chatluna_character.broadcastOnBot(
                     session,
-                    chunk.parsedResponse.elements.flat()
+                    sendResult.sentMessages
                 )
                 nextReplyReasons.push(
                     ...extractNextReplyReasons(chunk.responseContent)
@@ -759,18 +759,31 @@ async function handleVoiceMessage(
     ctx: Context,
     text: string,
     elements: h[]
-): Promise<{ breakSay: boolean; sent: boolean }> {
+): Promise<{
+    breakSay: boolean
+    sent: boolean
+    messageId?: string
+    elements?: h[]
+}> {
     try {
-        await sendElements(
-            session,
-            await voiceRender(ctx, session, text, undefined, elements)
-        )
-        return { breakSay: true, sent: true }
+        const rendered = await voiceRender(ctx, session, text, undefined, elements)
+        const ids = await sendElements(session, rendered)
+        return {
+            breakSay: true,
+            sent: true,
+            messageId: ids[0],
+            elements: rendered
+        }
     } catch (e) {
         logger.error(e)
         try {
-            await sendElements(session, elements)
-            return { breakSay: false, sent: true }
+            const ids = await sendElements(session, elements)
+            return {
+                breakSay: false,
+                sent: true,
+                messageId: ids[0],
+                elements
+            }
         } catch (fallbackError) {
             logger.error(fallbackError)
             return { breakSay: false, sent: false }
@@ -788,7 +801,12 @@ async function handleMessageSending(
     maxTime: number,
     emoticonStatement: string,
     breakSay: boolean
-): Promise<{ breakSay: boolean; sent: boolean }> {
+): Promise<{
+    breakSay: boolean
+    sent: boolean
+    messageId?: string
+    elements?: h[]
+}> {
     const isVoice = parsedResponse.messageType === 'voice'
     if (isVoice && emoticonStatement !== 'text') {
         return { breakSay: false, sent: false }
@@ -815,35 +833,44 @@ async function handleMessageSending(
     }
 
     let sent = false
+    let messageId: string | undefined
+    let sentElements: h[] | undefined
     try {
         switch (parsedResponse.messageType) {
             case 'text':
-                await sendElements(session, elements)
+                messageId = (await sendElements(session, elements))[0]
+                sentElements = elements
                 sent = true
                 break
             case 'voice':
-                await sendElements(
+                sentElements = await voiceRender(
+                    ctx,
                     session,
-                    await voiceRender(ctx, session, text, undefined, elements)
+                    text,
+                    undefined,
+                    elements
                 )
+                messageId = (await sendElements(session, sentElements))[0]
                 sent = true
                 break
             default:
-                await sendElements(session, elements)
+                messageId = (await sendElements(session, elements))[0]
+                sentElements = elements
                 sent = true
                 break
         }
     } catch (e) {
         logger.error(e)
         try {
-            await sendElements(session, elements)
+            messageId = (await sendElements(session, elements))[0]
+            sentElements = elements
             sent = true
         } catch (fallbackError) {
             logger.error(fallbackError)
         }
     }
 
-    return { breakSay: false, sent }
+    return { breakSay: false, sent, messageId, elements: sentElements }
 }
 
 async function handleParsedResponseChunk(
@@ -851,9 +878,14 @@ async function handleParsedResponseChunk(
     config: Config,
     ctx: Context,
     parsedResponse: ParsedResponse
-): Promise<{ breakSay: boolean; sentAny: boolean }> {
+): Promise<{
+    breakSay: boolean
+    sentAny: boolean
+    sentMessages: { elements: h[]; messageId?: string }[]
+}> {
     let breakSay = false
     let sentAny = false
+    const sentMessages: { elements: h[]; messageId?: string }[] = []
 
     for (const elements of parsedResponse.elements) {
         const text =
@@ -882,13 +914,19 @@ async function handleParsedResponseChunk(
         )
         breakSay = result.breakSay
         sentAny = sentAny || result.sent
+        if (result.sent && result.elements) {
+            sentMessages.push({
+                elements: result.elements,
+                messageId: result.messageId
+            })
+        }
 
         if (breakSay) {
             break
         }
     }
 
-    return { breakSay, sentAny }
+    return { breakSay, sentAny, sentMessages }
 }
 
 type ParsedResponse = Awaited<ReturnType<typeof parseResponse>>
