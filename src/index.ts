@@ -137,4 +137,13 @@ export const usage = `
 `
 
 export { Config } from './config'
+export type {
+    CharacterAfterChatEventPayload,
+    CharacterBaseMessageSnapshot,
+    CharacterBeforeChatEventPayload,
+    CharacterClearChatHistoryEventPayload,
+    CharacterMessageSnapshot,
+    CharacterPresetSnapshot,
+    CharacterPromptTemplateSnapshot
+} from './types'
 export const name = 'chatluna-character'

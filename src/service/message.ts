@@ -445,6 +445,23 @@ export class MessageCollector extends Service {
         return this._getMutex(groupId).lock()
     }
 
+    private _emitClearChatHistory(sessionKey: string) {
+        const isDirect = sessionKey.startsWith('private:')
+        this.ctx
+            .parallel('chatluna_character/clear-chat-history', {
+                sessionKey,
+                targetId: isDirect
+                    ? sessionKey.slice('private:'.length)
+                    : sessionKey.startsWith('group:')
+                      ? sessionKey.slice('group:'.length)
+                      : sessionKey,
+                isDirect
+            })
+            .catch((error) => {
+                this.logger.error(error)
+            })
+    }
+
     async clear(groupId?: string) {
         if (groupId) {
             const isDirect = groupId.startsWith('private:')
@@ -493,11 +510,21 @@ export class MessageCollector extends Service {
             } finally {
                 unlock()
             }
+            this._emitClearChatHistory(groupId)
             return
         }
 
         // For clear-all, acquire locks in sorted order to prevent deadlocks
-        const groupIds = Object.keys(this._groupLocks).sort()
+        const groupIds = Array.from(
+            new Set([
+                ...Object.keys(this._messages),
+                ...Object.keys(this._groupLocks),
+                ...Object.keys(this._groupTemp),
+                ...Object.keys(this._responseWaiters),
+                ...Object.keys(this._pendingCooldownTriggers),
+                ...Object.keys(this._cooldownTriggerTimers)
+            ])
+        ).sort()
         const unlocks: (() => void)[] = []
         for (const gid of groupIds) {
             unlocks.push(await this._lockByGroupId(gid))
@@ -558,6 +585,10 @@ export class MessageCollector extends Service {
             for (let i = unlocks.length - 1; i >= 0; i--) {
                 unlocks[i]()
             }
+        }
+
+        for (const groupId of groupIds) {
+            this._emitClearChatHistory(groupId)
         }
     }
 

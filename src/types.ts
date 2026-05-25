@@ -167,6 +167,56 @@ export interface PresetTemplate {
     path?: string
 }
 
+export interface CharacterPromptTemplateSnapshot {
+    readonly rawString: string
+}
+
+export interface CharacterPresetSnapshot {
+    readonly name: string
+    readonly status?: string
+    readonly nick_name: readonly string[]
+    readonly input: CharacterPromptTemplateSnapshot
+    readonly system: CharacterPromptTemplateSnapshot
+    readonly mute_keyword?: readonly string[]
+    readonly path?: string
+}
+
+export type CharacterMessageSnapshot = Readonly<Message>
+
+export type CharacterBaseMessageSnapshot = Readonly<Record<string, unknown>>
+
+export interface CharacterBeforeChatEventPayload {
+    readonly session: Session
+    readonly sessionKey: string
+    readonly targetId: string | undefined
+    readonly presetName: string
+    readonly preset: CharacterPresetSnapshot
+    readonly messages: readonly CharacterMessageSnapshot[]
+    readonly focusMessage?: CharacterMessageSnapshot
+    readonly triggerReason?: string
+}
+
+export interface CharacterAfterChatEventPayload {
+    readonly session: Session
+    readonly sessionKey: string
+    readonly targetId: string | undefined
+    readonly presetName: string
+    readonly preset: CharacterPresetSnapshot
+    readonly messages: readonly CharacterMessageSnapshot[]
+    readonly focusMessage?: CharacterMessageSnapshot
+    readonly triggerReason?: string
+    readonly persistedHumanMessage: CharacterBaseMessageSnapshot
+    readonly lastResponseMessage?: CharacterBaseMessageSnapshot
+    readonly completionMessages: readonly CharacterBaseMessageSnapshot[]
+    readonly status?: string | null
+}
+
+export interface CharacterClearChatHistoryEventPayload {
+    readonly sessionKey: string
+    readonly targetId: string
+    readonly isDirect: boolean
+}
+
 export interface GroupInfo {
     messageCount: number
     messageWait?: boolean
@@ -295,5 +345,17 @@ declare module 'koishi' {
     interface Tables {
         chathub_character_variable: CharacterVariableRecord
         chathub_character_wake_up_reply: WakeUpReplyRecord
+    }
+
+    interface Events {
+        'chatluna_character/before-chat': (
+            payload: CharacterBeforeChatEventPayload
+        ) => void | Promise<void>
+        'chatluna_character/after-chat': (
+            payload: CharacterAfterChatEventPayload
+        ) => void | Promise<void>
+        'chatluna_character/clear-chat-history': (
+            payload: CharacterClearChatHistoryEventPayload
+        ) => void | Promise<void>
     }
 }
