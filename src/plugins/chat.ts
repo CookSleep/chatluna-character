@@ -449,13 +449,13 @@ function createReplyTools(
                 'List of messages to send. Each object in the array is one ' +
                 'message. Use an empty array when no reply is needed. ' +
                 'IMPORTANT: Each message object only supports ONE top-level ' +
-                'content field (text, image, sticker, audio, file, video, ' +
-                'voice, markdown, or at). Do NOT combine multiple content ' +
-                'fields in the same message object outside of `parts`; only ' +
-                'the first matching field will be used and the rest will be ' +
-                'silently ignored. To send a message containing multiple ' +
-                'elements (e.g. text + image, text + at), you MUST use the ' +
-                '`parts` array.',
+                'content field (parts, at, face, sticker, image, audio, ' +
+                'file, video, markdown, voice, or text). Do NOT combine ' +
+                'multiple content fields in the same message object outside ' +
+                'of `parts`; if you do, only the first field in that priority ' +
+                'order will be used and the rest will be silently ignored. ' +
+                'To send a message containing multiple elements (e.g. ' +
+                'text + image, text + at), you MUST use the `parts` array.',
             items: {
                 ...message
             }
