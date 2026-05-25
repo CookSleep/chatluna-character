@@ -343,13 +343,7 @@ function createReplyTools(
             parts: {
                 type: 'array',
                 description:
-                    'Multiple parts inside one message, joined in order. ' +
-                    'Use this when you need to combine multiple elements ' +
-                    '(text, image, at, face) in a single message. Only the ' +
-                    'fields available in each part item are supported here; ' +
-                    'other element types (sticker, audio, file, video, ' +
-                    'voice, markdown) cannot be combined and must be sent ' +
-                    'as a standalone message.',
+                    'Use this to combine multiple elements (text, image, at, face) in one message. Other element types (sticker, audio, file, video, voice, markdown) cannot appear in parts and must be sent as a standalone message.',
                 items: {
                     ...part
                 }
@@ -446,7 +440,7 @@ function createReplyTools(
         messages: {
             type: 'array',
             description:
-                'List of messages to send. Each object in the array is one message. Use an empty array when no reply is needed. IMPORTANT: Each message object only supports ONE top-level content field (parts, at, face, sticker, image, audio, file, video, markdown, voice, or text). Do NOT combine multiple content fields in the same message object outside of `parts`; if you do, only the first field in that priority order will be used and the rest will be silently ignored. To send a message containing multiple elements (e.g. text + image, text + at), you MUST use the `parts` array.',
+                'List of messages to send. Each message object uses only one content field at a time. To combine multiple elements in one message, use `parts`. Use an empty array when no reply is needed.',
             items: {
                 ...message
             }
