@@ -332,132 +332,78 @@ function createReplyTools(
 ): StructuredTool[] {
     const canAt = !session.isDirect && 'isAt' in config && config.isAt
     const canFace = session.platform === 'qq' || session.platform === 'onebot'
-    const part = {
+    const elementTypes = ['text', 'image', 'sticker', 'audio']
+    const element = {
         type: 'object',
         properties: {
+            type: {
+                type: 'string',
+                enum: elementTypes,
+                description: 'Element type'
+            },
             text: {
                 type: 'string',
-                description: 'Text content'
+                description:
+                    'Text for type=text, type=markdown, or type=voice'
             },
-            image: {
+            url: {
                 type: 'string',
-                description: 'HTTP(S) image URL'
+                description:
+                    'HTTP(S) URL for type=image, type=sticker, type=audio, type=file, or type=video'
+            },
+            id: {
+                type: 'string',
+                description: 'User ID for type=at, QQ face ID for type=face, or optional voice ID for type=voice'
+            },
+            name: {
+                type: 'string',
+                description: 'File name for type=file'
             }
-        }
+        },
+        required: ['type']
     }
 
     const message = {
         type: 'object',
         properties: {
-            text: {
-                type: 'string',
-                description: 'Text content'
-            },
             quote: {
                 type: 'string',
                 description: 'Platform message ID to quote'
             },
-            sticker: {
-                type: 'string',
-                description: 'HTTP(S) sticker URL'
-            },
-            image: {
-                type: 'string',
-                description: 'HTTP(S) image URL'
-            },
-            audio: {
-                type: 'string',
-                description: 'HTTP(S) audio URL to send as a voice message'
-            },
-            parts: {
+            content: {
                 type: 'array',
                 description:
-                    'Use this to combine multiple elements (text, image, at, face) in one message. Other element types (sticker, audio, file, video, voice, markdown) cannot appear in parts and must be sent as a standalone message.',
+                    'Ordered elements inside this message. text, image, at, and face can coexist. sticker, audio, file, video, voice, and markdown must be the sole element.',
                 items: {
-                    ...part
+                    ...element
                 }
             }
-        }
+        },
+        required: ['content']
     }
 
     if (canAt) {
-        part.properties['at'] = {
-            type: 'string',
-            description: 'Platform ID of the user to mention.'
-        }
-        message.properties['at'] = {
-            type: 'string',
-            description: 'Platform ID of the user to mention.'
-        }
+        elementTypes.push('at')
     }
 
     if (canFace) {
-        part.properties['face'] = {
-            type: 'string',
-            description: 'QQ face ID'
-        }
-        message.properties['face'] = {
-            type: 'string',
-            description: 'QQ face ID'
-        }
+        elementTypes.push('face')
     }
 
     if (ctx.vits) {
-        message.properties['voice'] = {
-            type: 'object',
-            description: 'Voice message',
-            properties: {
-                text: {
-                    type: 'string',
-                    description: 'Text to synthesize into voice'
-                },
-                id: {
-                    type: 'string',
-                    description: 'Optional voice ID'
-                }
-            },
-            required: ['text']
-        }
+        elementTypes.push('voice')
     }
 
     if (session.platform !== 'qq') {
-        message.properties['file'] = {
-            type: 'object',
-            description: 'File message',
-            properties: {
-                name: {
-                    type: 'string',
-                    description: 'File name'
-                },
-                url: {
-                    type: 'string',
-                    description: 'HTTP(S) file URL'
-                }
-            },
-            required: ['name', 'url']
-        }
+        elementTypes.push('file')
 
         if (session.platform === 'onebot') {
-            message.properties['video'] = {
-                type: 'object',
-                description:
-                    'Video message. Prefer this for videos within 100MB, but metadata may be lost. Use file for larger videos.',
-                properties: {
-                    url: {
-                        type: 'string',
-                        description: 'HTTP(S) video URL'
-                    }
-                },
-                required: ['url']
-            }
+            elementTypes.push('video')
         }
     }
 
     if (session.platform === 'qq' && session.isDirect) {
-        message.properties['markdown'] = {
-            type: 'string',
-            description: 'Markdown content, including LaTeX'
-        }
+        elementTypes.push('markdown')
     }
 
     const props: Record<string, unknown> = {
@@ -469,7 +415,7 @@ function createReplyTools(
         messages: {
             type: 'array',
             description:
-                'List of messages to send. Each message object uses only one content field at a time. To combine multiple elements in one message, use `parts`. Use an empty array when no reply is needed.',
+                'Chat bubbles to send. Each item is one message. Use an empty array when no reply is needed.',
             items: {
                 ...message
             }
@@ -594,7 +540,7 @@ function createReplyTools(
                 {
                     name: 'character_reply',
                     description:
-                        'Send one or more in-character reply messages and required actions. All user-visible reply content must be sent through this tool. Use the literal string `\\n` for line breaks in all string fields. Do not use real newline characters. Do not manually wrap content in XML tags inside any field. Fill the structured fields directly. Do not end the turn with plain text output outside this tool.',
+                        'Send in-character reply messages. Use the literal string `\\n` for line breaks in all string fields. Do not use real newline characters. Do not wrap content in XML tags inside any field.',
                     returnDirect: false,
                     verboseParsingErrors: true,
                     schema: {
@@ -863,29 +809,63 @@ function buildXmlMessage(args: Record<string, unknown>) {
         return text.replaceAll('"', '&quot;')
     }
 
-    const buildPart = (part: Record<string, unknown>) => {
-        let result = ''
-
-        if (typeof part.text === 'string') {
-            result += escape(part.text)
+    const buildElement = (el: Record<string, unknown>) => {
+        if (el.type === 'text') {
+            return escape(el.text)
         }
 
-        if (typeof part.at === 'string') {
-            result += `<at>${escape(part.at)}</at>`
+        if (el.type === 'at') {
+            return `<at>${escape(el.id)}</at>`
         }
 
-        if (typeof part.face === 'string') {
-            result += `<face>${escape(part.face)}</face>`
+        if (el.type === 'face') {
+            return `<face>${escape(el.id)}</face>`
         }
 
-        if (typeof part.image === 'string') {
-            if (!isHttpUrl(part.image)) {
-                return result
+        if (el.type === 'sticker') {
+            if (!isHttpUrl(el.url)) {
+                return ''
             }
-            result += `<image>${escape(part.image)}</image>`
+            return `<sticker>${escape(el.url)}</sticker>`
         }
 
-        return result
+        if (el.type === 'image') {
+            if (!isHttpUrl(el.url)) {
+                return ''
+            }
+            return `<image>${escape(el.url)}</image>`
+        }
+
+        if (el.type === 'audio') {
+            if (!isHttpUrl(el.url)) {
+                return ''
+            }
+            return `<audio>${escape(el.url)}</audio>`
+        }
+
+        if (el.type === 'file') {
+            if (!isHttpUrl(el.url)) {
+                return ''
+            }
+            return `<file name="${escape(el.name ?? 'file', true)}">${escape(el.url)}</file>`
+        }
+
+        if (el.type === 'video') {
+            if (!isHttpUrl(el.url)) {
+                return ''
+            }
+            return `<video>${escape(el.url)}</video>`
+        }
+
+        if (el.type === 'markdown') {
+            return `<markdown>${escape(el.text)}</markdown>`
+        }
+
+        if (el.type === 'voice') {
+            return `<voice id="${escape(el.id, true)}">${escape(el.text)}</voice>`
+        }
+
+        return ''
     }
 
     const quote =
@@ -893,85 +873,19 @@ function buildXmlMessage(args: Record<string, unknown>) {
             ? ` quote="${escape(args.quote, true)}"`
             : ''
 
-    if (Array.isArray(args.parts)) {
-        const content = args.parts
+    if (Array.isArray(args.content)) {
+        const content = args.content
             .filter(
                 (item) =>
                     item && typeof item === 'object' && !Array.isArray(item)
             )
-            .map((item) => buildPart(item as Record<string, unknown>))
+            .map((item) => buildElement(item as Record<string, unknown>))
             .join('')
 
         return `<message${quote}>${content}</message>`
     }
 
-    if (typeof args.at === 'string') {
-        return `<message${quote}><at>${escape(args.at)}</at></message>`
-    }
-
-    if (typeof args.face === 'string') {
-        return `<message${quote}><face>${escape(args.face)}</face></message>`
-    }
-
-    if (typeof args.sticker === 'string') {
-        if (!isHttpUrl(args.sticker)) {
-            return `<message${quote}></message>`
-        }
-        return `<message${quote}><sticker>${escape(args.sticker)}</sticker></message>`
-    }
-
-    if (typeof args.image === 'string') {
-        if (!isHttpUrl(args.image)) {
-            return `<message${quote}></message>`
-        }
-        return `<message${quote}><image>${escape(args.image)}</image></message>`
-    }
-
-    if (typeof args.audio === 'string') {
-        if (!isHttpUrl(args.audio)) {
-            return `<message${quote}></message>`
-        }
-        return `<message${quote}><audio>${escape(args.audio)}</audio></message>`
-    }
-
-    if (
-        args.file &&
-        typeof args.file === 'object' &&
-        !Array.isArray(args.file)
-    ) {
-        const file = args.file as Record<string, unknown>
-        if (!isHttpUrl(file.url)) {
-            return `<message${quote}></message>`
-        }
-        return `<message${quote}><file name="${escape(file.name ?? 'file', true)}">${escape(file.url)}</file></message>`
-    }
-
-    if (
-        args.video &&
-        typeof args.video === 'object' &&
-        !Array.isArray(args.video)
-    ) {
-        const video = args.video as Record<string, unknown>
-        if (!isHttpUrl(video.url)) {
-            return `<message${quote}></message>`
-        }
-        return `<message${quote}><video>${escape(video.url)}</video></message>`
-    }
-
-    if (typeof args.markdown === 'string') {
-        return `<message${quote}><markdown>${escape(args.markdown)}</markdown></message>`
-    }
-
-    if (
-        args.voice &&
-        typeof args.voice === 'object' &&
-        !Array.isArray(args.voice)
-    ) {
-        const voice = args.voice as Record<string, unknown>
-        return `<message${quote}><voice id="${escape(voice.id, true)}">${escape(voice.text)}</voice></message>`
-    }
-
-    return `<message${quote}>${escape(args.text)}</message>`
+    return `<message${quote}></message>`
 }
 
 function parseReplyTools(
