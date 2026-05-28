@@ -333,6 +333,31 @@ function createReplyTools(
     const canAt = !session.isDirect && 'isAt' in config && config.isAt
     const canFace = session.platform === 'qq' || session.platform === 'onebot'
     const elementTypes = ['text', 'image', 'sticker', 'audio']
+
+    if (canAt) {
+        elementTypes.push('at')
+    }
+
+    if (canFace) {
+        elementTypes.push('face')
+    }
+
+    if (ctx.vits) {
+        elementTypes.push('voice')
+    }
+
+    if (session.platform !== 'qq') {
+        elementTypes.push('file')
+
+        if (session.platform === 'onebot') {
+            elementTypes.push('video')
+        }
+    }
+
+    if (session.platform === 'qq' && session.isDirect) {
+        elementTypes.push('markdown')
+    }
+
     const element = {
         type: 'object',
         properties: {
@@ -380,30 +405,6 @@ function createReplyTools(
             }
         },
         required: ['content']
-    }
-
-    if (canAt) {
-        elementTypes.push('at')
-    }
-
-    if (canFace) {
-        elementTypes.push('face')
-    }
-
-    if (ctx.vits) {
-        elementTypes.push('voice')
-    }
-
-    if (session.platform !== 'qq') {
-        elementTypes.push('file')
-
-        if (session.platform === 'onebot') {
-            elementTypes.push('video')
-        }
-    }
-
-    if (session.platform === 'qq' && session.isDirect) {
-        elementTypes.push('markdown')
     }
 
     const props: Record<string, unknown> = {
