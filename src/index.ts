@@ -134,6 +134,10 @@ export const usage = `
 ### 26.05.19
 
 新增 \`<audio>\` 音频文件消息，支持 XML 与工具调用输出；\`<voice>\` 仍仅用于 TTS。详见文档。
+
+### 26.05.28
+
+优化 \`character_reply\` 工具调用回复格式：每条消息统一使用 \`content\` 元素列表，单元素消息与多元素消息使用同一种结构。
 `
 
 export { Config } from './config'
