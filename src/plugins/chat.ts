@@ -2216,17 +2216,24 @@ export async function apply(ctx: Context, config: Config) {
                         ctx,
                         chunk.parsedResponse
                     )
-
-                    if (!sendResult.sentAny) {
-                        continue
-                    }
-
-                    sentAny = true
-                    lastResponseMessage =
+                    const responseMessage =
                         copyOfConfig.experimentalToolCallReply &&
                         chunk.toolCalls?.length
                             ? new AIMessage(chunk.responseContent)
                             : chunk.responseMessage
+
+                    if (!sendResult.sentAny) {
+                        if (
+                            isEmptyReply &&
+                            /<action\b/i.test(chunk.responseContent)
+                        ) {
+                            lastResponseMessage = responseMessage
+                        }
+                        continue
+                    }
+
+                    sentAny = true
+                    lastResponseMessage = responseMessage
                     await ctx.chatluna_character.broadcastOnBot(
                         session,
                         sendResult.sentMessages
@@ -2240,7 +2247,7 @@ export async function apply(ctx: Context, config: Config) {
                 service.stopPendingMessages(session)
             }
 
-            if (!sentAny) {
+            if (!sentAny && !lastResponseMessage) {
                 if (hasEmptyReplies && !hasNonEmptyReplies) {
                     await registerResponseTriggers(
                         ctx,
