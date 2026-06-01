@@ -379,7 +379,7 @@ function createReplyTools(
                     'Required HTTP(S) URL for type=image, type=sticker, type=audio, type=file, or type=video'
             },
             id: {
-                type: ['string', 'number'],
+                type: 'string',
                 description:
                     'User ID for type=at, QQ face ID for type=face, or optional voice ID for type=voice'
             },
