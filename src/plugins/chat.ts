@@ -1731,34 +1731,40 @@ async function* streamModelResponse(
     let failedMessage: BaseMessage | undefined
     for (let idx = 0; idx < 2; idx++) {
         try {
-            const errText = String(err)
-            const retryPrompt =
-                config.experimentalToolCallReply && config.toolCalling
-                    ? errText.includes('invalid character_reply tool call')
-                        ? `Your previous \`character_reply\` tool call was invalid, so it could not be delivered.
+            let messages = completionMessages
+            if (idx > 0) {
+                const errText = String(err)
+                if (errText.includes('Failed to parse response')) {
+                    const retryPrompt =
+                        config.experimentalToolCallReply && config.toolCalling
+                            ? errText.includes(
+                                  'invalid character_reply tool call'
+                              )
+                                ? `Your previous \`character_reply\` tool call was invalid, so it could not be delivered.
 The parser error was: ${errText}.
 Fix the missing or invalid fields named in the parser error.
 Do not repeat completed external tool calls unless necessary.
 Use the content from the previous reply and call \`character_reply\` again.`
-                        : errText.includes('missing character_reply tool call')
-                          ? `Your previous reply did not call \`character_reply\`, so it could not be delivered.
+                                : errText.includes(
+                                        'missing character_reply tool call'
+                                    )
+                                  ? `Your previous reply did not call \`character_reply\`, so it could not be delivered.
 The parser error was: ${errText}.
 Do not repeat completed external tool calls unless necessary.
 Use the content from the previous reply and send it through \`character_reply\` now.`
-                          : `Your previous reply could not be delivered through \`character_reply\`.
+                                  : `Your previous reply could not be delivered through \`character_reply\`.
 The parser error was: ${errText}.
 Do not repeat completed external tool calls unless necessary.
 Use the content from the previous reply and call \`character_reply\` now.`
-                    : `Your previous reply used an invalid format and could not be delivered.
+                            : `Your previous reply used an invalid format and could not be delivered.
 The parser error was: ${errText}.
 Reply again using valid XML output with <message> tags.`
-            const messages =
-                idx === 0 || !errText.includes('Failed to parse response')
-                    ? completionMessages
-                    : completionMessages.concat(
-                          ...(failedMessage ? [failedMessage] : []),
-                          new HumanMessage(retryPrompt)
-                      )
+                    messages = completionMessages.concat(
+                        ...(failedMessage ? [failedMessage] : []),
+                        new HumanMessage(retryPrompt)
+                    )
+                }
+            }
             const lastMessage = messages[messages.length - 1]
             const historyMessages = messages.slice(0, -1)
 
@@ -1812,9 +1818,11 @@ Reply again using valid XML output with <message> tags.`
             if (idx < 1) {
                 err = e
                 logger.warn('model response failed, retry once', e)
+                await sleep(3000)
                 continue
             }
             logger.error('model requests failed', e)
+            throw e
         }
     }
 }
