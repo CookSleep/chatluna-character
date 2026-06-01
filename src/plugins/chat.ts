@@ -370,12 +370,13 @@ function createReplyTools(
             text: {
                 type: 'string',
                 description:
-                    'Text for type=text, type=markdown, or type=voice'
+                    'Required text for type=text, type=markdown, or type=voice. ' +
+                    'A plain text element must be {"type":"text","text":"..."}, not {"text":"..."}.'
             },
             url: {
                 type: 'string',
                 description:
-                    'HTTP(S) URL for type=image, type=sticker, type=audio, type=file, or type=video'
+                    'Required HTTP(S) URL for type=image, type=sticker, type=audio, type=file, or type=video'
             },
             id: {
                 type: 'string',
@@ -399,7 +400,9 @@ function createReplyTools(
             content: {
                 type: 'array',
                 description:
-                    'Ordered elements inside this message. text, image, at, and face can coexist. sticker, audio, file, video, voice, and markdown must be the sole element.',
+                    'Ordered elements inside this message. Every element must include type. ' +
+                    'text, image, at, and face can coexist. sticker, audio, file, video, voice, and markdown must be the sole element. ' +
+                    'Use messages: [] when no reply is needed.',
                 items: {
                     ...element
                 }
@@ -2407,6 +2410,112 @@ function getReplyToolInputError(
 
     if (!Array.isArray(args.messages)) {
         return 'Field messages must be an array'
+    }
+
+    for (let i = 0; i < args.messages.length; i++) {
+        const msg = args.messages[i]
+        if (!msg || typeof msg !== 'object' || Array.isArray(msg)) {
+            return `Field messages[${i}] must be an object`
+        }
+
+        const content = (msg as Record<string, unknown>).content
+        if (!Array.isArray(content)) {
+            return `Field messages[${i}].content must be an array`
+        }
+
+        if (content.length < 1) {
+            return `Field messages[${i}].content must not be empty. Use messages: [] when no reply is needed`
+        }
+
+        const quote = (msg as Record<string, unknown>).quote
+        if (quote != null && typeof quote !== 'string') {
+            return `Field messages[${i}].quote must be a string`
+        }
+
+        for (let j = 0; j < content.length; j++) {
+            const el = content[j]
+            if (!el || typeof el !== 'object' || Array.isArray(el)) {
+                return `Field messages[${i}].content[${j}] must be an object`
+            }
+
+            const item = el as Record<string, unknown>
+            if (typeof item.type !== 'string') {
+                return (
+                    `Field messages[${i}].content[${j}].type must be a string. ` +
+                    'For text, use {"type":"text","text":"..."}'
+                )
+            }
+
+            if (
+                ![
+                    'text',
+                    'image',
+                    'sticker',
+                    'audio',
+                    'at',
+                    'face',
+                    'voice',
+                    'file',
+                    'video',
+                    'markdown'
+                ].includes(item.type)
+            ) {
+                return (
+                    `Field messages[${i}].content[${j}].type must be one of ` +
+                    'text, image, sticker, audio, at, face, voice, file, video, markdown'
+                )
+            }
+
+            if (
+                ['sticker', 'audio', 'file', 'video', 'voice', 'markdown'].includes(
+                    item.type
+                ) &&
+                content.length > 1
+            ) {
+                return `Element type ${item.type} must be the only element in messages[${i}].content`
+            }
+
+            if (
+                ['text', 'markdown', 'voice'].includes(item.type) &&
+                (typeof item.text !== 'string' || item.text.trim().length < 1)
+            ) {
+                return `Field messages[${i}].content[${j}].text must be a non-empty string for type ${item.type}`
+            }
+
+            if (
+                ['at', 'face'].includes(item.type) &&
+                (typeof item.id !== 'string' || item.id.trim().length < 1)
+            ) {
+                return `Field messages[${i}].content[${j}].id must be a non-empty string for type ${item.type}`
+            }
+
+            if (
+                ['image', 'sticker', 'audio', 'file', 'video'].includes(
+                    item.type
+                ) &&
+                (typeof item.url !== 'string' ||
+                    (!item.url.startsWith('http://') &&
+                        !item.url.startsWith('https://')))
+            ) {
+                return `Field messages[${i}].content[${j}].url must be an HTTP(S) string for type ${item.type}`
+            }
+
+            if (
+                item.type === 'file' &&
+                item.name != null &&
+                typeof item.name !== 'string'
+            ) {
+                return `Field messages[${i}].content[${j}].name must be a string for type file`
+            }
+
+            if (
+                item.type === 'voice' &&
+                item.id != null &&
+                typeof item.id !== 'string'
+            ) {
+                return `Field messages[${i}].content[${j}].id must be a string for type voice`
+            }
+        }
     }
 
     if (config.toolCallReplyStatusTag && typeof args.status !== 'string') {
