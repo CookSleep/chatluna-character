@@ -1818,7 +1818,6 @@ Reply again using valid XML output with <message> tags.`
             if (idx < 1) {
                 err = e
                 logger.warn('model response failed, retry once', e)
-                await sleep(3000)
                 continue
             }
             logger.error('model requests failed', e)
