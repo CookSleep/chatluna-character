@@ -379,8 +379,9 @@ function createReplyTools(
                     'Required HTTP(S) URL for type=image, type=sticker, type=audio, type=file, or type=video'
             },
             id: {
-                type: 'string',
-                description: 'User ID for type=at, QQ face ID for type=face, or optional voice ID for type=voice'
+                type: ['string', 'number'],
+                description:
+                    'User ID for type=at, QQ face ID for type=face, or optional voice ID for type=voice'
             },
             name: {
                 type: 'string',
@@ -2467,9 +2468,14 @@ function getReplyToolInputError(
             }
 
             if (
-                ['sticker', 'audio', 'file', 'video', 'voice', 'markdown'].includes(
-                    item.type
-                ) &&
+                [
+                    'sticker',
+                    'audio',
+                    'file',
+                    'video',
+                    'voice',
+                    'markdown'
+                ].includes(item.type) &&
                 content.length > 1
             ) {
                 return `Element type ${item.type} must be the only element in messages[${i}].content`
@@ -2484,9 +2490,12 @@ function getReplyToolInputError(
 
             if (
                 ['at', 'face'].includes(item.type) &&
-                (typeof item.id !== 'string' || item.id.trim().length < 1)
+                (item.id == null ||
+                    (typeof item.id !== 'string' &&
+                        typeof item.id !== 'number') ||
+                    String(item.id).trim().length < 1)
             ) {
-                return `Field messages[${i}].content[${j}].id must be a non-empty string for type ${item.type}`
+                return `Field messages[${i}].content[${j}].id must be a non-empty string or number for type ${item.type}`
             }
 
             if (
@@ -2511,9 +2520,10 @@ function getReplyToolInputError(
             if (
                 item.type === 'voice' &&
                 item.id != null &&
-                typeof item.id !== 'string'
+                typeof item.id !== 'string' &&
+                typeof item.id !== 'number'
             ) {
-                return `Field messages[${i}].content[${j}].id must be a string for type voice`
+                return `Field messages[${i}].content[${j}].id must be a string or number for type voice`
             }
         }
     }
