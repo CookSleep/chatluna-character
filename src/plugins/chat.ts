@@ -59,6 +59,7 @@ interface StreamedResponseContentChunk {
     responseContent: string
     isIntermediate: boolean
     toolCalls?: ReplyToolCall[]
+    toolErrors?: string[]
 }
 
 interface ReplyToolCall {
@@ -1048,9 +1049,10 @@ async function parseResponseContent(
 ): Promise<StreamedParsedResponseChunk> {
     let parsedResponse: ParsedResponse
     const { responseMessage, responseContent, isIntermediate } = chunk
+    const toolErrors = chunk.toolErrors ?? []
     const calls =
         config.experimentalToolCallReply && chunk.toolCalls?.length > 0
-            ? filterReplyToolCalls(config, chunk.toolCalls)
+            ? filterReplyToolCalls(config, chunk.toolCalls, toolErrors)
             : undefined
     const toolState =
         calls && calls.length > 0 ? parseReplyTools(config, calls) : undefined
@@ -1058,6 +1060,23 @@ async function parseResponseContent(
     const renderedContent = hasCalls
         ? renderReplyToolXml(ctx, session, config, calls)
         : responseContent
+
+    if (!hasCalls && toolErrors.length > 0) {
+        throw new Error(
+            `Failed to parse response: invalid character_reply tool call. ${toolErrors.join('; ')}`
+        )
+    }
+
+    if (
+        config.experimentalToolCallReply &&
+        config.toolCalling &&
+        !hasCalls &&
+        !isIntermediate
+    ) {
+        throw new Error(
+            'Failed to parse response: missing character_reply tool call'
+        )
+    }
 
     if (
         !toolState &&
@@ -1201,10 +1220,15 @@ async function* streamAgentResponseContents(
     )
 
     for await (const responseChunk of responseStream) {
+        const toolErrors: string[] = []
         const calls =
             config.experimentalToolCallReply &&
             responseChunk.toolCalls?.length > 0
-                ? filterReplyToolCalls(config, responseChunk.toolCalls)
+                ? filterReplyToolCalls(
+                      config,
+                      responseChunk.toolCalls,
+                      toolErrors
+                  )
                 : responseChunk.toolCalls
 
         if (
@@ -1244,6 +1268,20 @@ async function* streamAgentResponseContents(
                 ? renderReplyToolXml(ctx, session, config, calls)
                 : responseContent
         if (renderedContent.trim().length < 1) {
+            if (toolErrors.length > 0) {
+                throw new Error(
+                    `Failed to parse response: invalid character_reply tool call. ${toolErrors.join('; ')}`
+                )
+            }
+            if (
+                config.experimentalToolCallReply &&
+                responseChunk.phase === 'final' &&
+                !finalReply
+            ) {
+                throw new Error(
+                    'Failed to parse response: missing character_reply tool call'
+                )
+            }
             continue
         }
 
@@ -1257,7 +1295,8 @@ async function* streamAgentResponseContents(
             responseMessage,
             responseContent: renderedContent,
             isIntermediate,
-            toolCalls: calls
+            toolCalls: calls,
+            toolErrors
         }
     }
 }
@@ -1692,20 +1731,33 @@ async function* streamModelResponse(
     let failedMessage: BaseMessage | undefined
     for (let idx = 0; idx < 2; idx++) {
         try {
+            const errText = String(err)
+            const retryPrompt =
+                config.experimentalToolCallReply && config.toolCalling
+                    ? errText.includes('invalid character_reply tool call')
+                        ? `Your previous \`character_reply\` tool call was invalid, so it could not be delivered.
+The parser error was: ${errText}.
+Fix the missing or invalid fields named in the parser error.
+Do not repeat completed external tool calls unless necessary.
+Use the content from the previous reply and call \`character_reply\` again.`
+                        : errText.includes('missing character_reply tool call')
+                          ? `Your previous reply did not call \`character_reply\`, so it could not be delivered.
+The parser error was: ${errText}.
+Do not repeat completed external tool calls unless necessary.
+Use the content from the previous reply and send it through \`character_reply\` now.`
+                          : `Your previous reply could not be delivered through \`character_reply\`.
+The parser error was: ${errText}.
+Do not repeat completed external tool calls unless necessary.
+Use the content from the previous reply and call \`character_reply\` now.`
+                    : `Your previous reply used an invalid format and could not be delivered.
+The parser error was: ${errText}.
+Reply again using valid XML output with <message> tags.`
             const messages =
-                idx === 0 || !String(err).includes('Failed to parse response')
+                idx === 0 || !errText.includes('Failed to parse response')
                     ? completionMessages
                     : completionMessages.concat(
                           ...(failedMessage ? [failedMessage] : []),
-                          new HumanMessage(
-                              config.experimentalToolCallReply &&
-                                  config.toolCalling
-                                  ? 'Your previous reply was not sent through `character_reply`, so it could not be delivered. ' +
-                                        'Do not repeat completed external tool calls unless necessary. ' +
-                                    'Use the content from the previous reply and call `character_reply` now.'
-                                  : 'Your previous reply used an invalid format and could not be delivered. ' +
-                                        'Reply again using valid XML output with <message> tags.'
-                          )
+                          new HumanMessage(retryPrompt)
                       )
             const lastMessage = messages[messages.length - 1]
             const historyMessages = messages.slice(0, -1)
@@ -2363,7 +2415,8 @@ function getReplyToolInputError(
 
 function filterReplyToolCalls(
     config: Config | GuildConfig | PrivateConfig,
-    calls: ReplyToolCall[]
+    calls: ReplyToolCall[],
+    errors?: string[]
 ) {
     return calls.filter((call) => {
         if (call.name !== 'character_reply') {
@@ -2372,6 +2425,7 @@ function filterReplyToolCalls(
 
         const err = getReplyToolInputError(config, call.args)
         if (err) {
+            errors?.push(err)
             logger.debug(`Skip invalid character_reply tool call: ${err}`)
             return false
         }
