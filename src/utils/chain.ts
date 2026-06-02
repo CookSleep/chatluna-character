@@ -254,8 +254,18 @@ export async function createChatLunaChain(
             }
 
             const chunkQueue = createAsyncChunkQueue<ChatLunaChainStreamChunk>()
+            const ctl = new AbortController()
             let buf = ''
             const toolCalls: ChatLunaChainStreamChunk['toolCalls'] = []
+            const onAbort = () => ctl.abort()
+
+            if (options?.signal?.aborted) {
+                ctl.abort()
+            } else {
+                options?.signal?.addEventListener('abort', onAbort, {
+                    once: true
+                })
+            }
 
             const emitEarlyIntermediate = (action: AgentStep['action']) => {
                 const chunk = createAgentResponseChunk(
@@ -292,6 +302,7 @@ export async function createChatLunaChain(
 
             const streamOptions: ChatLunaRunnableConfig = {
                 ...(options ?? {}),
+                signal: ctl.signal,
                 configurable: {
                     ...(options?.configurable ?? {}),
                     ...(toolMask != null ? { toolMask } : {})
@@ -388,6 +399,8 @@ export async function createChatLunaChain(
                     if (value) yield value
                 }
             } finally {
+                options?.signal?.removeEventListener('abort', onAbort)
+                ctl.abort()
                 await producer
             }
         }
