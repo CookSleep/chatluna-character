@@ -230,13 +230,12 @@ export async function createChatLunaChain(
             const mask =
                 toolMask ??
                 (await ctx.chatluna.resolveToolMask({
-                    session
-                    // source: 'character'
+                    session,
+                    source: 'character'
                 }))
 
             toolsRef.update(session, copyOfMessages, mask)
             extraRef.value = extraTools ? extraTools(session) : []
-
             return mask
         }
 
@@ -249,6 +248,7 @@ export async function createChatLunaChain(
                 ...input,
                 configurable: {
                     ...(input.configurable ?? {}),
+                    source: 'character',
                     ...(toolMask != null ? { toolMask } : {})
                 }
             }
@@ -305,6 +305,7 @@ export async function createChatLunaChain(
                 signal: ctl.signal,
                 configurable: {
                     ...(options?.configurable ?? {}),
+                    source: 'character',
                     ...(toolMask != null ? { toolMask } : {})
                 },
                 callbacks: [
@@ -412,6 +413,7 @@ export async function createChatLunaChain(
                     ...input,
                     configurable: {
                         ...(input.configurable ?? {}),
+                        source: 'character',
                         ...(toolMask != null ? { toolMask } : {})
                     }
                 }
@@ -420,6 +422,7 @@ export async function createChatLunaChain(
                     ...(options ?? {}),
                     configurable: {
                         ...(options?.configurable ?? {}),
+                        source: 'character',
                         ...(toolMask != null ? { toolMask } : {})
                     }
                 }

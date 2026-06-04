@@ -416,7 +416,7 @@ function createReplyTools(
         is_final: {
             type: 'boolean',
             description:
-                'Whether this is the final reply of the current turn. Use false only for temporary progress updates when you still need more tools or more reasoning. Use true for the final reply of this turn.'
+                'Whether this is the final reply of the current turn. Use false only for temporary progress updates, and only when you call the next non-character tool in the same assistant response. Never call character_reply with is_final=false as the only tool call. Use true for the final reply of this turn.'
         },
         messages: {
             type: 'array',
@@ -546,7 +546,7 @@ function createReplyTools(
                 {
                     name: 'character_reply',
                     description:
-                        'Send in-character reply messages. Use the literal string `\\n` for line breaks in all string fields. Do not use real newline characters. Do not wrap content in XML tags inside any field.',
+                        'Send in-character reply messages. Progress updates with is_final=false must be paired with the next non-character tool call in the same assistant response. Use the literal string `\\n` for line breaks in all string fields. Do not use real newline characters. Do not wrap content in XML tags inside any field.',
                     returnDirect: false,
                     verboseParsingErrors: true,
                     schema: {
@@ -765,7 +765,7 @@ function formatReplyUserPrompt(session: Session, config: RuntimeConfig) {
     if (config.experimentalToolCallReply && config.toolCalling) {
         tips.push(
             'All user-visible reply content must be sent through `character_reply`. Do not end the turn with plain text outside this tool.',
-            'Before calling time-consuming tools (such as searching), send a progress update to the user with `character_reply` first. Quick tools that finish almost instantly, such as reading a voice message, do not need this.'
+            'Before calling time-consuming tools (such as searching), send a progress update to the user with `character_reply` and call the time-consuming tool in the same assistant response. Never call `character_reply` with `is_final=false` alone. Quick tools that finish almost instantly, such as reading a voice message, do not need this.'
         )
 
         if (config.toolCallReplyStatusTag) {
@@ -1738,6 +1738,18 @@ async function* streamModelResponse(
             let messages = completionMessages
             if (idx > 0) {
                 const errText = String(err)
+                const lastAiIndex = completionMessages
+                    .map((message) => message.getType())
+                    .lastIndexOf('ai')
+                const retryBaseMessages =
+                    config.experimentalToolCallReply && config.toolCalling
+                        ? [completionMessages[0]].concat(
+                              completionMessages.slice(
+                                  Math.max(1, lastAiIndex + 1)
+                              )
+                          )
+                        : completionMessages
+
                 if (errText.includes('Failed to parse response')) {
                     const retryPrompt =
                         config.experimentalToolCallReply && config.toolCalling
@@ -1763,9 +1775,30 @@ Use the content from the previous reply and call \`character_reply\` now.`
                             : `Your previous reply used an invalid format and could not be delivered.
 The parser error was: ${errText}.
 Reply again using valid XML output with <message> tags.`
-                    messages = completionMessages.concat(
-                        ...(failedMessage ? [failedMessage] : []),
-                        new HumanMessage(retryPrompt)
+                    const failedCalls = failedMessage
+                        ? (((failedMessage as unknown as { tool_calls?: ReplyToolCall[] })
+                              .tool_calls ?? []) as ReplyToolCall[])
+                        : []
+                    const appendFailed =
+                        failedMessage &&
+                        (!config.experimentalToolCallReply ||
+                            !config.toolCalling ||
+                            failedCalls.every(
+                                (call) => call.name === 'character_reply'
+                            ))
+
+                    messages = (
+                        appendFailed ? completionMessages : retryBaseMessages
+                    ).concat(
+                        ...(appendFailed ? [failedMessage] : []),
+                        new HumanMessage(
+                            appendFailed
+                                ? retryPrompt
+                                : retryPrompt.replace(
+                                      /Use the content from the previous reply and call `character_reply` again\.|Use the content from the previous reply and send it through `character_reply` now\.|Use the content from the previous reply and call `character_reply` now\./,
+                                      'Retry the current turn from the original user request. Do not copy or summarize the failed reply.'
+                                  )
+                        )
                     )
                 }
             }
@@ -1819,7 +1852,7 @@ Reply again using valid XML output with <message> tags.`
             return
         } catch (e) {
             if (signal?.aborted) return
-            if (idx < 1) {
+            if (idx < 1 && String(e).includes('Failed to parse response')) {
                 err = e
                 logger.warn('model response failed, retry once', e)
                 continue
