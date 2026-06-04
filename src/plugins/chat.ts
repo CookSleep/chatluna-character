@@ -1738,18 +1738,6 @@ async function* streamModelResponse(
             let messages = completionMessages
             if (idx > 0) {
                 const errText = String(err)
-                const lastAiIndex = completionMessages
-                    .map((message) => message.getType())
-                    .lastIndexOf('ai')
-                const retryBaseMessages =
-                    config.experimentalToolCallReply && config.toolCalling
-                        ? [completionMessages[0]].concat(
-                              completionMessages.slice(
-                                  Math.max(1, lastAiIndex + 1)
-                              )
-                          )
-                        : completionMessages
-
                 if (errText.includes('Failed to parse response')) {
                     const retryPrompt =
                         config.experimentalToolCallReply && config.toolCalling
@@ -1776,8 +1764,11 @@ Use the content from the previous reply and call \`character_reply\` now.`
 The parser error was: ${errText}.
 Reply again using valid XML output with <message> tags.`
                     const failedCalls = failedMessage
-                        ? (((failedMessage as unknown as { tool_calls?: ReplyToolCall[] })
-                              .tool_calls ?? []) as ReplyToolCall[])
+                        ? (((
+                              failedMessage as unknown as {
+                                  tool_calls?: ReplyToolCall[]
+                              }
+                          ).tool_calls ?? []) as ReplyToolCall[])
                         : []
                     const appendFailed =
                         failedMessage &&
@@ -1787,9 +1778,7 @@ Reply again using valid XML output with <message> tags.`
                                 (call) => call.name === 'character_reply'
                             ))
 
-                    messages = (
-                        appendFailed ? completionMessages : retryBaseMessages
-                    ).concat(
+                    messages = completionMessages.concat(
                         ...(appendFailed ? [failedMessage] : []),
                         new HumanMessage(
                             appendFailed
