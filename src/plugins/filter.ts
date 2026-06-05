@@ -507,11 +507,6 @@ async function processSchedulerTickForGuild(
     const now = Date.now()
     const triggeredWakeUpReply = findWakeUpTrigger(info, now)
 
-    if (triggeredWakeUpReply && (service.getMessages(key)?.length ?? 0) < 1) {
-        store.set(key, info)
-        return
-    }
-
     if (service.isMute(session)) {
         store.set(key, info)
         return
