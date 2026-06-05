@@ -83,6 +83,14 @@ export async function formatMessage(
     let lastMessage: string | undefined
     let lastSelectedMessage: Message | undefined
 
+    if (messages.length < 1) {
+        return {
+            recentMessages: [],
+            lastMessage: '',
+            contextMessages: []
+        } as const
+    }
+
     if (focusMessage && messages.includes(focusMessage)) {
         const xmlFocusMessage = formatMessageString(
             focusMessage,
