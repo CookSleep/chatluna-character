@@ -11,22 +11,13 @@ export function apply(ctx: Context, config: Config) {
             authority: 3
         }
     ).action(async ({ session }, target) => {
-        const isDirect = target
-            ? target.startsWith('private:') || target.startsWith('p:')
-            : session.isDirect
-        const id = target
-            ? target.startsWith('private:')
-                ? target.slice('private:'.length)
-                : target.startsWith('p:')
-                  ? target.slice('p:'.length)
-                : target.startsWith('group:')
-                  ? target.slice('group:'.length)
-                  : target.startsWith('g:')
-                    ? target.slice('g:'.length)
-                  : target
-            : isDirect
-              ? session.userId
-              : session.guildId
+        const matched = target?.match(/^(?:(private|p)|(group|g)):(.*)$/)
+        const isDirect = matched
+            ? matched[1] != null
+            : !target && session.isDirect
+        const id = matched
+            ? matched[3]
+            : target ?? (isDirect ? session.userId : session.guildId)
 
         if (!id) {
             await session.send('请检查你是否提供了群组或私聊用户 ID')
@@ -34,9 +25,15 @@ export function apply(ctx: Context, config: Config) {
         }
 
         const key = `${isDirect ? 'private' : 'group'}:${id}`
+        const currentKey = `${session.isDirect ? 'private' : 'group'}:${
+            session.isDirect ? session.userId : session.guildId
+        }`
         const label = isDirect ? '私聊' : '群组'
         const hasTrigger = ctx.chatluna_character_trigger.get(key) != null
-        const cleared = await ctx.chatluna_character.clear(key)
+        const cleared = await ctx.chatluna_character.clear(
+            key,
+            key === currentKey
+        )
 
         if (!cleared && !hasTrigger) {
             await session.send(`未找到${label} ${id} 的聊天记录`)

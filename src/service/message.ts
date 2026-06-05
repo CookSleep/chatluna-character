@@ -462,24 +462,8 @@ export class MessageCollector extends Service {
             })
     }
 
-    async clear(groupId?: string) {
+    async clear(groupId?: string, force?: boolean) {
         if (groupId) {
-            const temp = this._groupTemp[groupId]
-            const hasRecord =
-                this._messages[groupId]?.length > 0 ||
-                temp?.completionMessages.length > 0 ||
-                temp?.status != null ||
-                temp?.statusMessageId != null ||
-                temp?.statusMessageUserId != null ||
-                this._groupLocks[groupId] != null ||
-                this._responseWaiters[groupId]?.length > 0 ||
-                this._pendingCooldownTriggers[groupId] != null ||
-                this._cooldownTriggerTimers[groupId] != null
-
-            if (!hasRecord) {
-                return false
-            }
-
             const isDirect = groupId.startsWith('private:')
             const id = isDirect
                 ? groupId.slice('private:'.length)
@@ -498,11 +482,30 @@ export class MessageCollector extends Service {
                 globalConfig,
                 guildConfig
             )
+            const temp = this._groupTemp[groupId]
+            const lock = this._groupLocks[groupId]
+            const hasRecord =
+                this._messages[groupId]?.length > 0 ||
+                temp?.completionMessages.length > 0 ||
+                temp?.status != null ||
+                temp?.statusMessageId != null ||
+                temp?.statusMessageUserId != null ||
+                lock?.responseLock ||
+                this._responseWaiters[groupId]?.length > 0 ||
+                this._pendingCooldownTriggers[groupId] != null ||
+                this._cooldownTriggerTimers[groupId] != null ||
+                (force && config.historyPull)
+
+            if (!hasRecord) {
+                return false
+            }
+
             const clearedAt = new Date()
             const unlock = await this._lockByGroupId(groupId)
             try {
                 this._messages[groupId] = []
                 this._groupTemp[groupId] = newTemp(clearedAt)
+                delete this._consumedPendingMessages[groupId]
 
                 delete this._pendingCooldownTriggers[groupId]
                 const timer = this._cooldownTriggerTimers[groupId]
