@@ -72,6 +72,14 @@ export async function formatMessage(
     historyPrompt: string,
     focusMessage?: Message
 ) {
+    if (messages.length < 1) {
+        return {
+            recentMessages: [],
+            lastMessage: '',
+            contextMessages: []
+        } as const
+    }
+
     const maxTokens = config.maxTokens - 300
     let currentTokens = 0
 
@@ -82,14 +90,6 @@ export async function formatMessage(
     const selectedMessages: Message[] = []
     let lastMessage: string | undefined
     let lastSelectedMessage: Message | undefined
-
-    if (messages.length < 1) {
-        return {
-            recentMessages: [],
-            lastMessage: '',
-            contextMessages: []
-        } as const
-    }
 
     if (focusMessage && messages.includes(focusMessage)) {
         const xmlFocusMessage = formatMessageString(
