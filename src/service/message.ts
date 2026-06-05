@@ -464,6 +464,22 @@ export class MessageCollector extends Service {
 
     async clear(groupId?: string) {
         if (groupId) {
+            const temp = this._groupTemp[groupId]
+            const hasRecord =
+                this._messages[groupId]?.length > 0 ||
+                temp?.completionMessages.length > 0 ||
+                temp?.status != null ||
+                temp?.statusMessageId != null ||
+                temp?.statusMessageUserId != null ||
+                this._groupLocks[groupId] != null ||
+                this._responseWaiters[groupId]?.length > 0 ||
+                this._pendingCooldownTriggers[groupId] != null ||
+                this._cooldownTriggerTimers[groupId] != null
+
+            if (!hasRecord) {
+                return false
+            }
+
             const isDirect = groupId.startsWith('private:')
             const id = isDirect
                 ? groupId.slice('private:'.length)
@@ -511,7 +527,7 @@ export class MessageCollector extends Service {
                 unlock()
             }
             this._emitClearChatHistory(groupId)
-            return
+            return true
         }
 
         // For clear-all, acquire locks in sorted order to prevent deadlocks
@@ -590,6 +606,7 @@ export class MessageCollector extends Service {
         for (const groupId of groupIds) {
             this._emitClearChatHistory(groupId)
         }
+        return groupIds.length > 0
     }
 
     async broadcastOnBot(
