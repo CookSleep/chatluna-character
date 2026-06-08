@@ -195,25 +195,31 @@ function extractNextReplyReasonsFromTool(value: unknown) {
 
                 const condition = it as NextReplyToolCondition
                 if (condition.type === 'message_from_user') {
-                    if (
-                        typeof condition.user_id === 'string' &&
-                        condition.user_id.trim()
-                    ) {
-                        return `id_${condition.user_id.trim()}`
+                    const userId =
+                        typeof condition.user_id === 'string' ||
+                        typeof condition.user_id === 'number'
+                            ? String(condition.user_id).trim()
+                            : ''
+                    if (userId) {
+                        return `id_${userId}`
                     }
 
                     return undefined
                 }
 
                 if (condition.type === 'no_message_from_user') {
+                    const userId =
+                        typeof condition.user_id === 'string' ||
+                        typeof condition.user_id === 'number'
+                            ? String(condition.user_id).trim()
+                            : ''
                     if (
                         typeof condition.seconds === 'number' &&
                         Number.isFinite(condition.seconds) &&
                         condition.seconds > 0 &&
-                        typeof condition.user_id === 'string' &&
-                        condition.user_id.trim()
+                        userId
                     ) {
-                        if (condition.user_id.trim() === 'all') {
+                        if (userId === 'all') {
                             return `time_${condition.seconds}s`
                         }
 
@@ -222,10 +228,10 @@ function extractNextReplyReasonsFromTool(value: unknown) {
                             Number.isFinite(condition.max_wait_seconds) &&
                             condition.max_wait_seconds > 0
                         ) {
-                            return `time_${condition.seconds}s_id_${condition.user_id.trim()}_max_${condition.max_wait_seconds}s`
+                            return `time_${condition.seconds}s_id_${userId}_max_${condition.max_wait_seconds}s`
                         }
 
-                        return `time_${condition.seconds}s_id_${condition.user_id.trim()}`
+                        return `time_${condition.seconds}s_id_${userId}`
                     }
                 }
 
@@ -279,40 +285,50 @@ function buildNextReplyToolTags(value: unknown) {
 
             const condition = conditionItem as NextReplyToolCondition
             if (condition.type === 'message_from_user') {
-                if (
-                    typeof condition.user_id === 'string' &&
-                    condition.user_id.trim()
-                ) {
+                const userId =
+                    typeof condition.user_id === 'string' ||
+                    typeof condition.user_id === 'number'
+                        ? String(condition.user_id).trim()
+                        : ''
+                if (userId) {
+                    const escapedUserId = userId
+                        .replaceAll('&', '&amp;')
+                        .replaceAll('<', '&lt;')
+                        .replaceAll('>', '&gt;')
+                        .replaceAll('"', '&quot;')
                     tags.push(
-                        `<next_reply group="${groupIdx}" type="message_from_user" user_id="${condition.user_id.trim().replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')}" />`
+                        `<next_reply group="${groupIdx}" type="message_from_user" user_id="${escapedUserId}" />`
                     )
                 }
                 continue
             }
 
             if (condition.type === 'no_message_from_user') {
+                const userId =
+                    typeof condition.user_id === 'string' ||
+                    typeof condition.user_id === 'number'
+                        ? String(condition.user_id).trim()
+                        : ''
                 if (
                     typeof condition.seconds === 'number' &&
                     Number.isFinite(condition.seconds) &&
                     condition.seconds > 0 &&
-                    typeof condition.user_id === 'string' &&
-                    condition.user_id.trim()
+                    userId
                 ) {
-                    const userId = condition.user_id
-                        .trim()
+                    const escapedUserId = userId
                         .replaceAll('&', '&amp;')
                         .replaceAll('<', '&lt;')
                         .replaceAll('>', '&gt;')
                         .replaceAll('"', '&quot;')
                     const maxWait =
-                        condition.user_id.trim() !== 'all' &&
+                        userId !== 'all' &&
                         typeof condition.max_wait_seconds === 'number' &&
                         Number.isFinite(condition.max_wait_seconds) &&
                         condition.max_wait_seconds > 0
                             ? ` max_wait_seconds="${condition.max_wait_seconds}"`
                             : ''
                     tags.push(
-                        `<next_reply group="${groupIdx}" type="no_message_from_user" user_id="${userId}" seconds="${condition.seconds}"${maxWait} />`
+                        `<next_reply group="${groupIdx}" type="no_message_from_user" user_id="${escapedUserId}" seconds="${condition.seconds}"${maxWait} />`
                     )
                 }
             }
@@ -875,7 +891,8 @@ function buildXmlMessage(args: Record<string, unknown>) {
     }
 
     const quote =
-        typeof args.quote === 'string' && args.quote.length > 0
+        typeof args.quote === 'number' ||
+        (typeof args.quote === 'string' && args.quote.length > 0)
             ? ` quote="${escape(args.quote, true)}"`
             : ''
 
@@ -2451,8 +2468,12 @@ function getReplyToolInputError(
         }
 
         const quote = (msg as Record<string, unknown>).quote
-        if (quote != null && typeof quote !== 'string') {
-            return `Field messages[${i}].quote must be a string`
+        if (
+            quote != null &&
+            typeof quote !== 'string' &&
+            typeof quote !== 'number'
+        ) {
+            return `Field messages[${i}].quote must be a string or number`
         }
 
         for (let j = 0; j < content.length; j++) {
