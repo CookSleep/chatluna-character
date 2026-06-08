@@ -291,8 +291,13 @@ function buildNextReplyToolTags(value: unknown) {
                         ? String(condition.user_id).trim()
                         : ''
                 if (userId) {
+                    const escapedUserId = userId
+                        .replaceAll('&', '&amp;')
+                        .replaceAll('<', '&lt;')
+                        .replaceAll('>', '&gt;')
+                        .replaceAll('"', '&quot;')
                     tags.push(
-                        `<next_reply group="${groupIdx}" type="message_from_user" user_id="${userId.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')}" />`
+                        `<next_reply group="${groupIdx}" type="message_from_user" user_id="${escapedUserId}" />`
                     )
                 }
                 continue
@@ -886,9 +891,9 @@ function buildXmlMessage(args: Record<string, unknown>) {
     }
 
     const quote =
-        (typeof args.quote === 'string' || typeof args.quote === 'number') &&
-        String(args.quote).length > 0
-            ? ` quote="${escape(String(args.quote), true)}"`
+        typeof args.quote === 'number' ||
+        (typeof args.quote === 'string' && args.quote.length > 0)
+            ? ` quote="${escape(args.quote, true)}"`
             : ''
 
     if (Array.isArray(args.content)) {
