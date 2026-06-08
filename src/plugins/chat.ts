@@ -875,8 +875,9 @@ function buildXmlMessage(args: Record<string, unknown>) {
     }
 
     const quote =
-        typeof args.quote === 'string' && args.quote.length > 0
-            ? ` quote="${escape(args.quote, true)}"`
+        (typeof args.quote === 'string' || typeof args.quote === 'number') &&
+        String(args.quote).length > 0
+            ? ` quote="${escape(String(args.quote), true)}"`
             : ''
 
     if (Array.isArray(args.content)) {
@@ -2451,8 +2452,12 @@ function getReplyToolInputError(
         }
 
         const quote = (msg as Record<string, unknown>).quote
-        if (quote != null && typeof quote !== 'string') {
-            return `Field messages[${i}].quote must be a string`
+        if (
+            quote != null &&
+            typeof quote !== 'string' &&
+            typeof quote !== 'number'
+        ) {
+            return `Field messages[${i}].quote must be a string or number`
         }
 
         for (let j = 0; j < content.length; j++) {
