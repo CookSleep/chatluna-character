@@ -1,6 +1,7 @@
 import { Context } from 'koishi'
 import { Config } from '.'
 // import start
+import { apply as agent } from './plugins/agent'
 import { apply as chat } from './plugins/chat'
 import { apply as commands } from './plugins/commands'
 import { apply as config } from './plugins/config'
@@ -12,7 +13,7 @@ export async function plugins(ctx: Context, parent: Config) {
 
     const middlewares: Command[] =
         // middleware start
-        [chat, commands, config, filter, interception] // middleware end
+        [chat, commands, config, filter, interception, agent] // middleware end
 
     for (const middleware of middlewares) {
         await middleware(ctx, parent)

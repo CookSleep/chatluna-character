@@ -200,6 +200,19 @@ export class MessageCollector extends Service {
         return this._messages[groupId]
     }
 
+    async triggerMessage(session: Session, msg: Message, reason: string) {
+        const key = `${session.isDirect ? 'private' : 'group'}:${session.isDirect ? session.userId : session.guildId}`
+        await this._addMessage(session, msg, { silent: true })
+
+        const active = this._activePendingMessages[key]
+        if (active) {
+            active.append(msg, reason)
+            return true
+        }
+
+        return await this.triggerCollect(session, reason, msg)
+    }
+
     isMute(session: Session) {
         const lock = this._getGroupLocks(
             `${session.isDirect ? 'private' : 'group'}:${session.isDirect ? session.userId : session.guildId}`
@@ -908,6 +921,7 @@ export class MessageCollector extends Service {
         message: Message,
         options?: {
             processImages?: Config
+            silent?: boolean
         }
     ): Promise<string | undefined> {
         const unlock = await this._lockByGroupId(
@@ -925,7 +939,7 @@ export class MessageCollector extends Service {
             const maxMessageSize =
                 Object.assign({}, this._config, globalConfig, guildConfig)
                     .maxMessages ?? 40
-            let groupArray = this._messages[groupId] ?? []
+            const groupArray = this._messages[groupId] ?? []
 
             groupArray.push(message)
 
@@ -938,6 +952,10 @@ export class MessageCollector extends Service {
             }
 
             this._messages[groupId] = groupArray
+
+            if (options?.silent) {
+                return undefined
+            }
 
             for (const filter of this._filters) {
                 const reason = filter(session, message)
