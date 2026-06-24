@@ -777,7 +777,6 @@ export class MessageCollector extends Service {
                 unlock()
             }
 
-            await this.pullHistory(session, message)
             const triggered = await this.triggerCollect(
                 session,
                 triggerReason,
@@ -828,15 +827,17 @@ export class MessageCollector extends Service {
         signal?: AbortSignal
     ) {
         const groupId = `${session.isDirect ? 'private' : 'group'}:${session.isDirect ? session.userId : session.guildId}`
-        const focusMessage = message ?? this._messages[groupId]?.at(-1)
-        const acquired = await this.acquireResponseLock(
-            session,
-            focusMessage ?? {
+        const focusMessage =
+            message ??
+            this._messages[groupId]?.at(-1) ??
+            ({
                 content: '',
                 name: session.bot.user?.name ?? session.selfId,
                 id: session.bot.selfId ?? '0'
-            }
-        )
+            } satisfies Message)
+
+        await this.pullHistory(session, focusMessage)
+        const acquired = await this.acquireResponseLock(session, focusMessage)
 
         if (!acquired) {
             return false
@@ -1005,7 +1006,6 @@ export class MessageCollector extends Service {
             return
         }
 
-        await this.pullHistory(pending.session, pending.message)
         await this.triggerCollect(
             pending.session,
             pending.triggerReason,
